@@ -95,6 +95,119 @@ spring.datasource.username=
 spring.datasource.password=
 ```
 
+#### 重要说明：数据库文件的路径问题
+
+##### 问题1：db文件会自动打包进jar/war文件吗？
+
+**答案：不会，除非你将db文件放在特定目录。**
+
+具体情况：
+
+1. **当前配置（`./demo.db`）**：
+   - 数据库文件位于**项目根目录**（运行时创建）
+   - **不会**被Maven自动打包进jar/war文件
+   - 每次部署到新环境时，会自动创建新的数据库文件
+
+2. **如果将db文件放在`src/main/resources`目录下**：
+   - 例如：`src/main/resources/demo.db`
+   - Maven会将其**自动打包**进jar/war文件
+   - 但问题是：jar/war是压缩包，SQLite**无法直接在压缩包内写入数据**
+   - 结果：数据库会变成只读，所有写入操作会失败
+
+3. **最佳实践**：
+   - 不要将db文件打包进jar/war
+   - 使用外部路径存储数据库文件
+   - 通过环境变量或配置文件指定数据库路径
+
+##### 问题2：相对路径是相对哪一级目录？
+
+**答案：相对于 JVM 进程的工作目录（user.dir）。**
+
+不同运行方式下的工作目录：
+
+1. **使用 `mvn spring-boot:run` 运行**：
+   ```
+   工作目录 = 项目根目录（即 pom.xml 所在的目录）
+   示例：/Users/yiigaa/work/solo-5292/main/
+   所以 ./demo.db → /Users/yiigaa/work/solo-5292/main/demo.db
+   ```
+
+2. **使用 `java -jar xxx.jar` 运行**：
+   ```
+   工作目录 = 执行命令时的当前目录
+   
+   场景A：在jar所在目录执行
+   cd /path/to/target/
+   java -jar sqlite-demo-0.0.1-SNAPSHOT.jar
+   → 工作目录 = /path/to/target/
+   → ./demo.db → /path/to/target/demo.db
+   
+   场景B：在其他目录执行
+   cd /home/user/
+   java -jar /path/to/target/sqlite-demo-0.0.1-SNAPSHOT.jar
+   → 工作目录 = /home/user/
+   → ./demo.db → /home/user/demo.db
+   ```
+
+3. **部署到Tomcat等容器（war包）**：
+   ```
+   工作目录 = 取决于Tomcat的配置
+   通常是 Tomcat 的 bin 目录 或 Catalina_BASE 目录
+   
+   例如：
+   - Tomcat bin目录：/usr/local/tomcat/bin/
+   - 所以 ./demo.db → /usr/local/tomcat/bin/demo.db
+   ```
+
+##### 推荐的配置方式
+
+为了避免路径混乱，推荐以下方式：
+
+**方式1：使用绝对路径（推荐用于生产环境）**
+```properties
+# Windows
+spring.datasource.url=jdbc:sqlite:C:/data/demo.db
+
+# Linux/Mac
+spring.datasource.url=jdbc:sqlite:/var/data/demo.db
+```
+
+**方式2：使用环境变量**
+```properties
+# 通过环境变量指定路径
+spring.datasource.url=jdbc:sqlite:${DB_PATH:./data/demo.db}
+```
+
+运行时指定：
+```bash
+export DB_PATH=/var/data/demo.db
+java -jar sqlite-demo.jar
+```
+
+**方式3：使用Spring Boot的配置文件**
+```properties
+# application-dev.properties（开发环境）
+spring.datasource.url=jdbc:sqlite:./demo.db
+
+# application-prod.properties（生产环境）
+spring.datasource.url=jdbc:sqlite:/var/data/prod.db
+```
+
+运行时指定环境：
+```bash
+java -jar sqlite-demo.jar --spring.profiles.active=prod
+```
+
+##### 路径配置总结表
+
+| 运行方式 | 工作目录 | ./demo.db 实际位置 |
+|---------|---------|-------------------|
+| mvn spring-boot:run | 项目根目录 | `项目根目录/demo.db` |
+| java -jar（jar所在目录） | jar所在目录 | `jar目录/demo.db` |
+| java -jar（其他目录） | 当前目录 | `当前目录/demo.db` |
+| Tomcat部署 | Tomcat bin目录 | `tomcat/bin/demo.db` |
+| 绝对路径 | 不依赖 | 指定的绝对路径 |
+
 ### 3. 数据库初始化
 
 使用 Spring Boot 的 SQL 初始化功能：
